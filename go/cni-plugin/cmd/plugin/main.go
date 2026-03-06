@@ -139,7 +139,7 @@ func setupIPTables(netns, redirectPort, proxyUID string, excludePorts []string) 
 		// Redirect everything else.
 		rules = append(rules, []string{
 			"-t", "nat", "-A", "PROXY_OUTPUT",
-			"-j", "REDIRECT", "--to-ports", redirectPort,
+			"-p", "tcp", "-j", "REDIRECT", "--to-ports", redirectPort,
 		})
 
 		for _, rule := range rules {

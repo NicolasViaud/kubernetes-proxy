@@ -149,7 +149,7 @@ logs-proxy:
 	kubectl logs -n proxy -l app=proxy --all-containers -f
 
 logs-sidecar:
-	kubectl logs -n app -l app=app -c sidecar -f
+	kubectl logs -n app -l app=app -c istio-proxy -f
 
 logs-app:
 	kubectl logs -n app -l app=app -c app -f
@@ -165,7 +165,7 @@ test:
 		--annotations='traffic.sidecar.istio.io/includeInboundPorts=' \
 		--annotations='sidecar.istio.io/proxyUID=1337' \
 		--annotations='sidecar.istio.io/proxyGID=1337' \
-		--overrides='{"spec":{"containers":[{"name":"curl","image":"curlimages/curl:latest","command":["curl","-v","http://httpbin.org/get"],"securityContext":{"runAsUser":10001,"runAsNonRoot":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}}],"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
+		--overrides='{"spec":{"containers":[{"name":"curl","image":"curlimages/curl:latest","command":["curl","-v","http://httpbin.org/get"],"securityContext":{"runAsUser":10001,"runAsNonRoot":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}},{"name":"istio-proxy","image":"sidecar:latest","imagePullPolicy":"Never","env":[{"name":"LISTEN_ADDR","value":":15001"},{"name":"PROXY_ADDR","value":"proxy-service.proxy.svc.cluster.local:8080"}],"securityContext":{"runAsUser":1337,"runAsGroup":1337,"runAsNonRoot":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}}],"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
 		-- curl -v http://httpbin.org/get
 
 # --------------------------------------------------------------------------- #

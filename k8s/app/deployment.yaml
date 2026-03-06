@@ -21,9 +21,14 @@ spec:
         # Istio CNI reads these annotations and runs istio-iptables in the
         # pod network namespace before any container starts.
         #
-        # KNOWN LIMITATION (Istio 1.23 sidecar mode): the CNI binary plugin
-        # only processes pods that have a container named exactly "istio-proxy".
-        # Rename the sidecar container to "istio-proxy" to activate this mode.
+        # Istio CNI 1.22+ node agent checks for the "sidecar.istio.io/status"
+        # annotation (normally set by the injector webhook) to decide whether
+        # to run istio-iptables in the pod netns.  Because we patched the
+        # webhook to a different label (see patch-webhook.yaml), the annotation
+        # is never injected automatically — we must set it explicitly.
+        # The value only needs to be present; a minimal JSON is sufficient.
+        # The pod must also have a container named exactly "istio-proxy".
+        sidecar.istio.io/status: '{"containers":["istio-proxy"]}'
         traffic.sidecar.istio.io/includeOutboundIPRanges: "*"
         traffic.sidecar.istio.io/includeInboundPorts: ""
         traffic.sidecar.istio.io/excludeOutboundPorts: "53"
@@ -78,7 +83,7 @@ spec:
         # ---------------------------------------------------------------- #
         # Custom sidecar — transparent egress proxy                        #
         # ---------------------------------------------------------------- #
-        - name: sidecar
+        - name: istio-proxy
           image: sidecar:latest
           imagePullPolicy: Never
           ports:

@@ -53,7 +53,7 @@ func inNetNS(nsPath string, fn func() error) error {
 // network namespace to the one identified by fd.
 func setns(fd uintptr) error {
 	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_SETNS,
+		sysSETNS,
 		fd,
 		syscall.CLONE_NEWNET,
 		0,
