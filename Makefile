@@ -2,9 +2,12 @@ CLUSTER_NAME  := kubernetes-proxy
 ISTIO_VERSION := 1.23.0
 IMAGES        := proxy sidecar app
 
+# Force bash so Unix commands work on Windows (Git Bash / WSL).
+SHELL := bash
+
 .PHONY: all cluster-create cluster-delete \
         istio-install istio-patch-webhook \
-        build load deploy \
+        build load push deploy restart redeploy undeploy \
         logs-proxy logs-sidecar logs-app \
         test clean
 
@@ -14,7 +17,6 @@ IMAGES        := proxy sidecar app
 
 ## Create the kind cluster.
 cluster-create:
-	mkdir -p /tmp/k8s-proxy-cni-bin /tmp/k8s-proxy-cni-conf
 	kind create cluster --config k8s/kind-config.yaml
 	kubectl cluster-info --context kind-$(CLUSTER_NAME)
 
@@ -93,6 +95,16 @@ deploy:
 	kubectl apply -f k8s/app/
 	kubectl rollout status deployment/proxy -n proxy --timeout=60s
 	kubectl rollout status deployment/app   -n app   --timeout=60s
+
+## Restart all deployments (pick up new images already loaded into kind).
+restart:
+	kubectl rollout restart deployment/proxy -n proxy
+	kubectl rollout restart deployment/app   -n app
+	kubectl rollout status  deployment/proxy -n proxy --timeout=60s
+	kubectl rollout status  deployment/app   -n app   --timeout=60s
+
+## Rebuild images, reload into kind, then restart.
+redeploy: push restart
 
 ## Delete all manifests (keeps cluster and Istio).
 undeploy:

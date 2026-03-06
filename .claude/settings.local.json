@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kubectl get pods -n app -o wide)",
+      "Bash(kubectl get mutatingwebhookconfiguration istio-sidecar-injector -o jsonpath='{.webhooks[*].namespaceSelector}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(kubectl get mutatingwebhookconfiguration istio-sidecar-injector -o jsonpath='{range .webhooks[*]}{.name}{\"\"\\\\t\"\"}{.namespaceSelector.matchExpressions[0].key}{\"\"\\\\n\"\"}{end}')",
+      "Bash(kubectl patch mutatingwebhookconfiguration istio-sidecar-injector --patch-file k8s/istio/patch-webhook.yaml)",
+      "Bash(kubectl get mutatingwebhookconfiguration istio-sidecar-injector -o jsonpath='{range .webhooks[*]}{.name}{\"\"\\\\t\"\"}{.namespaceSelector.matchExpressions[0].key}={.namespaceSelector.matchExpressions[0].operator}{\"\"\\\\n\"\"}{end}')",
+      "Bash(kubectl rollout restart deployment/app -n app)",
+      "Bash(kubectl rollout status deployment/app -n app --timeout=90s)",
+      "Bash(kubectl logs -n app -l app=app -c app --tail=5)"
+    ]
+  }
+}

@@ -36,3 +36,10 @@ webhooks:
         - key: istio-sidecar-injection
           operator: In
           values: ["enabled"]
+  # This is the non-revisioned stable webhook — also needs the new label.
+  - name: namespace.sidecar-injector.istio.io
+    namespaceSelector:
+      matchExpressions:
+        - key: istio-sidecar-injection
+          operator: In
+          values: ["enabled"]

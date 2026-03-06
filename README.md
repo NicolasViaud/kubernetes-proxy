@@ -113,16 +113,38 @@ kubernetes-proxy/
 
 ---
 
+## Makefile reference
+
+| Target | Description |
+|---|---|
+| `make all` | Full setup from scratch: cluster → Istio → images → deploy |
+| `make cluster-create` | Create the kind cluster |
+| `make helm-add-istio` | Add the Istio Helm repository |
+| `make istio-install` | Install Istio base + istiod + CNI, then patch the webhook |
+| `make build` | Build all three Docker images |
+| `make load` | Load built images into the kind cluster |
+| `make push` | `build` + `load` |
+| `make deploy` | Apply all manifests and wait for rollout |
+| `make restart` | `kubectl rollout restart` both deployments (no rebuild) |
+| `make redeploy` | `push` + `restart` — use after changing Go code |
+| `make undeploy` | Delete app/proxy manifests, keep cluster and Istio |
+| `make logs-proxy` | Follow proxy container logs |
+| `make logs-sidecar` | Follow sidecar container logs |
+| `make logs-app` | Follow app container logs |
+| `make clean` | Delete the kind cluster entirely |
+
+---
+
 ## Quick start
 
 ```bash
-# 1. One-shot: cluster + Istio + images + deploy
+# One-shot: cluster + Istio + images + deploy
 make all
 
-# 2. Watch sidecar intercept traffic
+# Watch sidecar intercept traffic
 make logs-sidecar
 
-# 3. Watch proxy log forwarded requests
+# Watch proxy log forwarded requests
 make logs-proxy
 ```
 
@@ -141,16 +163,24 @@ make helm-add-istio
 make istio-install        # installs base, istiod, cni, patches webhook
 ```
 
-The patch changes the `MutatingWebhookConfiguration` so the sidecar-injector
-webhook fires only on namespaces labelled `istio-sidecar-injection: enabled`,
-while Istio CNI continues to watch `istio-injection: enabled`. The `app`
-namespace has only the CNI label, so iptables is set up but Envoy is never
-injected.
+Istio ships with **four** `MutatingWebhookConfiguration` webhooks that all
+inject the privileged `istio-init` container. The patch
+(`k8s/istio/patch-webhook.yaml`) re-targets three of them to a new label
+`istio-sidecar-injection: enabled` so they never fire in the `app` namespace.
+Istio CNI still watches `istio-injection: enabled` independently and sets up
+iptables without injecting Envoy.
+
+| Webhook | Default label | After patch |
+|---|---|---|
+| `namespace.sidecar-injector.istio.io` | `istio-injection: enabled` | `istio-sidecar-injection: enabled` |
+| `rev.namespace.sidecar-injector.istio.io` | `istio-injection: enabled` | `istio-sidecar-injection: enabled` |
+| `rev.object.sidecar-injector.istio.io` | `istio-injection: enabled` | `istio-sidecar-injection: enabled` |
+| `object.sidecar-injector.istio.io` | `istio-injection: DoesNotExist` | unchanged (never matches `app`) |
 
 ### 3 — Build and load images
 
 ```bash
-make push    # build + kind load docker-image
+make push    # docker build + kind load docker-image
 ```
 
 ### 4 — Deploy
@@ -172,17 +202,14 @@ make logs-proxy
 make logs-app
 ```
 
-### 6 — Ad-hoc curl test
+### 6 — Iterate on code
 
 ```bash
-make test
+# After editing Go source:
+make redeploy    # rebuild images, reload into kind, restart pods
 ```
 
-This spawns a temporary `curl` pod in the `app` namespace.  The pod's traffic
-is redirected by Istio CNI to port 15001 — but wait, `kubectl run` does not
-go through CNI at annotation-apply time in a running cluster; use the full
-app Deployment for the live traffic path.  For a quick smoke-test without
-CNI interception:
+### 7 — Ad-hoc curl test
 
 ```bash
 kubectl exec -n app deploy/app -c app -- wget -qO- http://httpbin.org/get
