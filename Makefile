@@ -1,13 +1,15 @@
 CLUSTER_NAME  := kubernetes-proxy
 ISTIO_VERSION := 1.23.0
-IMAGES        := proxy sidecar app
 
 # Force bash so Unix commands work on Windows (Git Bash / WSL).
 SHELL := bash
 
-.PHONY: all cluster-create cluster-delete \
+.PHONY: all all-istio-cni all-custom-cni \
+        cluster-create cluster-delete \
         istio-install istio-patch-webhook \
-        build load push deploy restart redeploy undeploy \
+        build load push \
+        build-cni load-cni push-cni cni-install cni-uninstall \
+        deploy restart redeploy undeploy \
         logs-proxy logs-sidecar logs-app \
         test clean
 
@@ -69,20 +71,47 @@ istio-install: istio-cni istio-patch-webhook
 # Images                                                                       #
 # --------------------------------------------------------------------------- #
 
-## Build all Docker images.
+## Build app images (proxy, sidecar, app).
 build:
-	docker build -t proxy:latest   ./proxy
-	docker build -t sidecar:latest ./sidecar
-	docker build -t app:latest     ./app
+	docker build -t proxy:latest   ./go/proxy
+	docker build -t sidecar:latest ./go/sidecar
+	docker build -t app:latest     ./go/app
 
-## Load images into the kind cluster (no registry needed).
+## Load app images into the kind cluster (no registry needed).
 load:
 	kind load docker-image proxy:latest   --name $(CLUSTER_NAME)
 	kind load docker-image sidecar:latest --name $(CLUSTER_NAME)
 	kind load docker-image app:latest     --name $(CLUSTER_NAME)
 
-## Build + load in one step.
+## Build + load app images in one step.
 push: build load
+
+# --------------------------------------------------------------------------- #
+# Custom CNI plugin                                                            #
+# --------------------------------------------------------------------------- #
+
+## Build the custom CNI plugin image.
+build-cni:
+	docker build -t cni-plugin:latest ./go/cni-plugin
+
+## Load the CNI plugin image into the kind cluster.
+load-cni:
+	kind load docker-image cni-plugin:latest --name $(CLUSTER_NAME)
+
+## Build + load CNI plugin image.
+push-cni: build-cni load-cni
+
+## Install the custom CNI plugin DaemonSet (alternative to Istio CNI).
+## The DaemonSet patches the kindnet conflist to add egress-proxy as a
+## chained plugin. No "istio-proxy" container name required.
+cni-install: push-cni
+	kubectl apply -f k8s/cni-plugin/
+	kubectl rollout status daemonset/egress-proxy-cni -n kube-system --timeout=60s
+
+## Remove the custom CNI plugin DaemonSet.
+## The installer restores the original conflist on graceful shutdown.
+cni-uninstall:
+	kubectl delete -f k8s/cni-plugin/ --ignore-not-found
 
 # --------------------------------------------------------------------------- #
 # Kubernetes resources                                                         #
@@ -143,8 +172,16 @@ test:
 # Utility                                                                      #
 # --------------------------------------------------------------------------- #
 
-## Full local setup from scratch.
-all: cluster-create helm-add-istio istio-install push deploy
+## Full setup using Istio CNI.
+## NOTE: Istio CNI requires the sidecar container to be named "istio-proxy".
+##       Use all-custom-cni to avoid that constraint.
+all-istio-cni: cluster-create helm-add-istio istio-install push deploy
+
+## Shortcut for all-istio-cni.
+all: all-istio-cni
+
+## Full setup using the custom CNI plugin (no Istio required, no naming constraints).
+all-custom-cni: cluster-create push cni-install deploy
 
 ## Tear everything down.
 clean: cluster-delete

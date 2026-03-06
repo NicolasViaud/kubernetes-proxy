@@ -1,0 +1,84 @@
+# egress-proxy CNI plugin installer DaemonSet.
+#
+# Runs on every node.  On start, copies the plugin binary to /opt/cni/bin/
+# and appends the plugin entry to the primary CNI conflist so traffic from
+# the configured namespaces is redirected to the custom sidecar.
+#
+# On SIGTERM (pod deleted / DaemonSet removed), the installer restores the
+# original conflist and removes the binary — leaving no trace on the node.
+#
+# Privileges required:
+#   privileged: true  — to enter pod network namespaces via setns(2)
+#   hostPath mounts   — to read/write /opt/cni/bin and /etc/cni/net.d
+#
+# These privileges stay in kube-system; application pods remain restricted.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: egress-proxy-cni
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: egress-proxy-cni
+  namespace: kube-system
+  labels:
+    app: egress-proxy-cni
+spec:
+  selector:
+    matchLabels:
+      app: egress-proxy-cni
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: egress-proxy-cni
+    spec:
+      serviceAccountName: egress-proxy-cni
+      hostNetwork: true
+      # Must run on every node — including control-plane.
+      tolerations:
+        - operator: Exists
+      priorityClassName: system-node-critical
+      # Give the installer time to clean up the conflist on graceful shutdown.
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: installer
+          image: cni-plugin:latest
+          imagePullPolicy: Never
+          env:
+            # Comma-separated list of namespaces whose pod traffic is
+            # redirected to the custom sidecar on port 15001.
+            - name: INTERCEPT_NAMESPACES
+              value: "app"
+            # Must match the sidecar's LISTEN_ADDR port.
+            - name: REDIRECT_PORT
+              value: "15001"
+            # UID excluded from the OUTPUT redirect rule (the sidecar UID).
+            - name: PROXY_UID
+              value: "1337"
+            # TCP ports whose outbound traffic is NOT redirected (DNS is UDP,
+            # but excluding port 53 here avoids surprises with TCP DNS).
+            - name: EXCLUDE_PORTS
+              value: "53"
+          securityContext:
+            # Required: the plugin binary calls setns(2) to enter pod
+            # network namespaces, which needs CAP_SYS_ADMIN.
+            privileged: true
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+            - name: cni-bin
+              mountPath: /host/opt/cni/bin
+            - name: cni-conf
+              mountPath: /host/etc/cni/net.d
+      volumes:
+        - name: cni-bin
+          hostPath:
+            path: /opt/cni/bin
+            type: Directory
+        - name: cni-conf
+          hostPath:
+            path: /etc/cni/net.d
+            type: Directory

@@ -239,17 +239,6 @@ The sidecar (UID 1337) reads the original destination with
 
 ---
 
-## Extending the proxy
-
-The proxy is intentionally minimal — it logs and forwards.  Natural next steps:
-
-- **Allow-list / deny-list**: reject CONNECT requests to unauthorized hosts.
-- **mTLS between sidecar and proxy**: use `crypto/tls` with cluster-local certs.
-- **Metrics**: expose a Prometheus `/metrics` endpoint with request counts.
-- **SOCKS5**: replace HTTP CONNECT with SOCKS5 in the sidecar for non-HTTP traffic.
-
----
-
 ## Teardown
 
 ```bash

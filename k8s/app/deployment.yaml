@@ -15,34 +15,28 @@ spec:
       labels:
         app: app
       annotations:
-        # --- Istio CNI traffic interception ---
+        # ================================================================= #
+        # CNI MODE A — Istio CNI                          (make istio-install) #
+        # ================================================================= #
+        # Istio CNI reads these annotations and runs istio-iptables in the
+        # pod network namespace before any container starts.
         #
-        # These annotations are read by the Istio CNI node agent at pod
-        # creation time (before any container starts).  The CNI plugin
-        # enters the pod network namespace and runs istio-iptables to
-        # redirect outbound traffic to port 15001 where our custom sidecar
-        # listens.
-        #
-        # The webhook is NOT triggered for this namespace (see patch-webhook.yaml),
-        # so no Envoy container is injected — only our custom sidecar below.
-
-        # Redirect ALL outbound traffic (any IP, any port).
+        # KNOWN LIMITATION (Istio 1.23 sidecar mode): the CNI binary plugin
+        # only processes pods that have a container named exactly "istio-proxy".
+        # Rename the sidecar container to "istio-proxy" to activate this mode.
         traffic.sidecar.istio.io/includeOutboundIPRanges: "*"
-
-        # Do NOT redirect inbound traffic — we only care about egress.
         traffic.sidecar.istio.io/includeInboundPorts: ""
-
-        # UID 1337 is excluded from the iptables OUTPUT redirect so the
-        # sidecar's own connection to proxy-service is not looped back.
+        traffic.sidecar.istio.io/excludeOutboundPorts: "53"
         sidecar.istio.io/proxyUID: "1337"
         sidecar.istio.io/proxyGID: "1337"
 
-        # Exclude Kubernetes DNS (UDP) — only TCP is handled by the sidecar.
-        traffic.sidecar.istio.io/excludeOutboundPorts: "53"
-
-        # Exclude the proxy service CIDR as an extra safety net.
-        # Replace with the actual ClusterIP if needed.
-        # traffic.sidecar.istio.io/excludeOutboundIPRanges: "10.96.0.0/12"
+        # ================================================================= #
+        # CNI MODE B — Custom egress-proxy CNI plugin     (make cni-install) #
+        # ================================================================= #
+        # The custom plugin selects pods by NAMESPACE (configured in the
+        # DaemonSet env var INTERCEPT_NAMESPACES).  No pod annotations or
+        # special container names are required.  The annotations above are
+        # silently ignored when only the custom CNI is installed.
     spec:
       # ------------------------------------------------------------------ #
       # Pod-level security context (required by "restricted" PSA)           #
