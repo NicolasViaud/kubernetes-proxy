@@ -154,19 +154,11 @@ logs-sidecar:
 logs-app:
 	kubectl logs -n app -l app=app -c app -f
 
-## Run a one-shot curl pod in the app namespace to test interception manually.
+## Ad-hoc test: exec into the running app pod and fetch a URL through the proxy.
+## The app container runs as UID 10000, so iptables intercepts the request and
+## routes it through the sidecar → central proxy, exactly like the app does.
 test:
-	kubectl run curl-test \
-		--image=curlimages/curl:latest \
-		--namespace=app \
-		--restart=Never \
-		--rm -it \
-		--annotations='traffic.sidecar.istio.io/includeOutboundIPRanges=*' \
-		--annotations='traffic.sidecar.istio.io/includeInboundPorts=' \
-		--annotations='sidecar.istio.io/proxyUID=1337' \
-		--annotations='sidecar.istio.io/proxyGID=1337' \
-		--overrides='{"spec":{"containers":[{"name":"curl","image":"curlimages/curl:latest","command":["curl","-v","http://httpbin.org/get"],"securityContext":{"runAsUser":10001,"runAsNonRoot":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}},{"name":"istio-proxy","image":"sidecar:latest","imagePullPolicy":"Never","env":[{"name":"LISTEN_ADDR","value":":15001"},{"name":"PROXY_ADDR","value":"proxy-service.proxy.svc.cluster.local:8080"}],"securityContext":{"runAsUser":1337,"runAsGroup":1337,"runAsNonRoot":true,"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}}],"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
-		-- curl -v http://httpbin.org/get
+	kubectl exec -n app deploy/app -c app -- wget -qO- http://httpbin.org/get
 
 # --------------------------------------------------------------------------- #
 # Utility                                                                      #
