@@ -1,0 +1,36 @@
+# Helm values for the "istio/cni" chart.
+#
+# Install with:
+#   helm upgrade --install istio-cni istio/cni \
+#     --namespace kube-system \
+#     --values k8s/istio/values-cni.yaml
+#
+# The CNI plugin is installed as a chained plugin: it runs AFTER the primary
+# CNI (kindnet in a kind cluster) and sets up iptables redirect rules in each
+# new pod's network namespace.
+
+cni:
+  # Chain after the primary CNI instead of replacing it.
+  chained: true
+
+  # Standard paths for kind nodes.
+  cniBinDir: /opt/cni/bin
+  cniConfDir: /etc/cni/net.d
+
+  # Log level for the CNI node agent.
+  logLevel: info
+
+  # Exclude system namespaces from traffic interception.
+  excludeNamespaces:
+    - kube-system
+    - istio-system
+    - proxy   # our proxy pods must not be intercepted
+
+# Resource limits for the DaemonSet.
+resources:
+  requests:
+    cpu: 100m
+    memory: 100Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

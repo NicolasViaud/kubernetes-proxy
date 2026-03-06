@@ -1,0 +1,38 @@
+# Patch the Istio sidecar-injector MutatingWebhookConfiguration so the webhook
+# triggers on label "istio-sidecar-injection: enabled" instead of the default
+# "istio-injection: enabled".
+#
+# Why: Istio CNI and the injector webhook both watch "istio-injection: enabled".
+# We want CNI to set up iptables in the "app" namespace, but we do NOT want
+# Envoy injected there (we use our own sidecar). By pointing the webhook at a
+# different label we decouple the two concerns:
+#
+#   "istio-injection: enabled"          → CNI sets up iptables (app namespace)
+#   "istio-sidecar-injection: enabled"  → webhook injects Envoy (other namespaces)
+#
+# Apply with:
+#   kubectl patch mutatingwebhookconfiguration istio-sidecar-injector \
+#     --patch-file k8s/istio/patch-webhook.yaml
+#
+# To add Envoy injection to a namespace, label it with both:
+#   kubectl label ns <name> \
+#     istio-injection=enabled \
+#     istio-sidecar-injection=enabled
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: istio-sidecar-injector
+webhooks:
+  - name: rev.namespace.sidecar-injector.istio.io
+    namespaceSelector:
+      matchExpressions:
+        - key: istio-sidecar-injection
+          operator: In
+          values: ["enabled"]
+  - name: rev.object.sidecar-injector.istio.io
+    namespaceSelector:
+      matchExpressions:
+        - key: istio-sidecar-injection
+          operator: In
+          values: ["enabled"]

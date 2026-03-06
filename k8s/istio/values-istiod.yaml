@@ -1,0 +1,35 @@
+# Helm values for the "istio/istiod" chart.
+#
+# Install with:
+#   helm upgrade --install istiod istio/istiod \
+#     --namespace istio-system \
+#     --values k8s/istio/values-istiod.yaml
+#
+# istiod is required because the Istio CNI node agent connects to it for
+# configuration (mesh config, excluded namespaces, etc.).
+
+pilot:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# The sidecar-injector webhook is re-configured in patch-webhook.yaml to
+# watch a DIFFERENT label ("istio-sidecar-injection: enabled") instead of
+# the default "istio-injection: enabled".
+#
+# This decouples CNI (triggered by "istio-injection: enabled") from Envoy
+# sidecar injection, letting us use our custom sidecar without Envoy.
+sidecarInjectorWebhook:
+  # Keep the webhook active — other namespaces may still use full Istio.
+  enabled: true
+  # Disable automatic namespace-wide injection so we control it per namespace.
+  enableNamespacesByDefault: false
+
+meshConfig:
+  # Allows pods without Envoy to communicate freely.
+  outboundTrafficPolicy:
+    mode: ALLOW_ANY

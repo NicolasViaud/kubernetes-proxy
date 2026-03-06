@@ -1,0 +1,41 @@
+# kind cluster configuration for local development.
+#
+# Create with: kind create cluster --config k8s/kind-config.yaml
+#
+# Notes:
+# - extraMounts expose the host's CNI directories so the Istio CNI DaemonSet
+#   can install its plugin binary and chained config.
+# - The control-plane node is tainted; worker nodes run the actual workloads.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubernetes-proxy
+
+networking:
+  # Disable the default CNI so we can control the setup ourselves.
+  # kind will still use kindnet unless disableDefaultCNI is true; here we
+  # keep kindnet as the primary CNI and chain Istio CNI on top.
+  disableDefaultCNI: false
+
+nodes:
+  - role: control-plane
+    # Expose host CNI paths into the control-plane node.
+    extraMounts:
+      - hostPath: /tmp/k8s-proxy-cni-bin
+        containerPath: /opt/cni/bin
+      - hostPath: /tmp/k8s-proxy-cni-conf
+        containerPath: /etc/cni/net.d
+
+  - role: worker
+    extraMounts:
+      - hostPath: /tmp/k8s-proxy-cni-bin
+        containerPath: /opt/cni/bin
+      - hostPath: /tmp/k8s-proxy-cni-conf
+        containerPath: /etc/cni/net.d
+
+  - role: worker
+    extraMounts:
+      - hostPath: /tmp/k8s-proxy-cni-bin
+        containerPath: /opt/cni/bin
+      - hostPath: /tmp/k8s-proxy-cni-conf
+        containerPath: /etc/cni/net.d

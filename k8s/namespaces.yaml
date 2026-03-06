@@ -1,0 +1,29 @@
+# proxy namespace — no special Istio label needed; proxy pods are NOT intercepted.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: proxy
+---
+# app namespace — labelled so Istio CNI sets up iptables redirect rules on pods.
+#
+# The label "istio-injection: enabled" is read by two independent components:
+#   1. Istio CNI node agent  → sets up iptables rules in the pod network namespace
+#   2. Istio sidecar-injector webhook → injects Envoy as a sidecar
+#
+# We want (1) but NOT (2).  The webhook is patched in
+# k8s/istio/patch-webhook.yaml to use a different namespace selector label
+# ("istio-sidecar-injection: enabled"), so labelling the app namespace with
+# only "istio-injection: enabled" triggers CNI without webhook injection.
+#
+# Pod Security Admission: "restricted" enforces no privilege escalation,
+# drop all capabilities, non-root UID, seccomp RuntimeDefault.
+# Our sidecar runs as UID 1337 which satisfies all of those constraints.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    istio-injection: enabled
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
