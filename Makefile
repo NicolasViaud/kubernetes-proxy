@@ -9,7 +9,9 @@ SHELL := bash
         istio-install istio-patch-webhook \
         build load push \
         build-cni load-cni push-cni cni-install cni-uninstall \
-        deploy restart redeploy undeploy \
+        deploy restart \
+        redeploy redeploy-istio-cni redeploy-custom-cni \
+        undeploy undeploy-istio-cni undeploy-custom-cni \
         logs-proxy logs-sidecar logs-app \
         test clean
 
@@ -132,14 +134,26 @@ restart:
 	kubectl rollout status  deployment/proxy -n proxy --timeout=60s
 	kubectl rollout status  deployment/app   -n app   --timeout=60s
 
-## Rebuild images, reload into kind, then restart.
-redeploy: push restart
+## Rebuild app images, reload into kind, then restart (Istio CNI mode).
+redeploy-istio-cni: push restart
+
+## Rebuild app + CNI plugin images, reload into kind, then restart (custom CNI mode).
+redeploy-custom-cni: push push-cni restart
+
+## Rebuild images, reload into kind, then restart (defaults to Istio CNI mode).
+redeploy: redeploy-istio-cni
 
 ## Delete all manifests (keeps cluster and Istio).
-undeploy:
+undeploy-istio-cni:
 	kubectl delete -f k8s/app/    --ignore-not-found
 	kubectl delete -f k8s/proxy/  --ignore-not-found
 	kubectl delete -f k8s/namespaces.yaml --ignore-not-found
+
+## Remove custom CNI plugin then delete all manifests.
+undeploy-custom-cni: cni-uninstall undeploy-istio-cni
+
+## Delete all manifests (defaults to Istio CNI mode).
+undeploy: undeploy-istio-cni
 
 # --------------------------------------------------------------------------- #
 # Observability                                                                #
