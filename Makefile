@@ -7,10 +7,11 @@ SHELL := bash
 .PHONY: all all-istio-cni all-custom-cni \
         cluster-create cluster-delete \
         istio-install istio-patch-webhook \
-        build load push \
+        build build-fuse load push push-fuse seccomp \
         build-cni load-cni push-cni cni-install cni-uninstall \
         deploy restart \
-        redeploy redeploy-istio-cni redeploy-custom-cni \
+        redeploy redeploy-istio-cni-vfs redeploy-custom-cni-vfs \
+        redeploy-istio-cni-fuse redeploy-custom-cni-fuse \
         undeploy undeploy-istio-cni undeploy-custom-cni \
         logs-proxy logs-sidecar logs-app \
         test clean
@@ -73,11 +74,32 @@ istio-install: istio-cni istio-patch-webhook
 # Images                                                                       #
 # --------------------------------------------------------------------------- #
 
-## Build app images (proxy, sidecar, app).
+## Build app images (proxy, sidecar, app) — vfs storage driver (restricted PSA).
 build:
 	docker build -t proxy:latest   ./go/proxy
-	docker build -t sidecar:latest ./go/sidecar
+	docker build -t sidecar:latest \
+		-f go/sidecar/docker/vfs/Dockerfile \
+		./go/sidecar
 	docker build -t app:latest     ./go/app
+
+## Build app images with the fuse/overlay storage driver (baseline PSA).
+## Requires a /dev/fuse hostPath volume in the pod spec.
+build-fuse:
+	docker build -t proxy:latest   ./go/proxy
+	docker build -t sidecar:latest \
+		-f go/sidecar/docker/fuse/Dockerfile \
+		./go/sidecar
+	docker build -t app:latest     ./go/app
+
+## Deploy the Localhost seccomp profile to all kind nodes (required for Podman).
+## The profile is read from k8s/seccomp/podman.json.
+## Must be re-run after every cluster restart — profiles do not persist.
+seccomp:
+	@for node in $$(kind get nodes --name $(CLUSTER_NAME)); do \
+		docker exec "$$node" mkdir -p /var/lib/kubelet/seccomp; \
+		docker cp k8s/seccomp/podman.json "$$node:/var/lib/kubelet/seccomp/podman.json"; \
+		echo "deployed seccomp profile to $$node"; \
+	done
 
 ## Load app images into the kind cluster (no registry needed).
 load:
@@ -85,8 +107,11 @@ load:
 	kind load docker-image sidecar:latest --name $(CLUSTER_NAME)
 	kind load docker-image app:latest     --name $(CLUSTER_NAME)
 
-## Build + load app images in one step.
+## Build + load app images in one step (vfs).
 push: build load
+
+## Build + load app images with fuse/overlay storage driver.
+push-fuse: build-fuse load
 
 # --------------------------------------------------------------------------- #
 # Custom CNI plugin                                                            #
@@ -134,14 +159,20 @@ restart:
 	kubectl rollout status  deployment/proxy -n proxy --timeout=60s
 	kubectl rollout status  deployment/app   -n app   --timeout=60s
 
-## Rebuild app images, reload into kind, then restart (Istio CNI mode).
-redeploy-istio-cni: push restart
+## Rebuild app images (vfs sidecar), reload into kind, then restart (Istio CNI mode).
+redeploy-istio-cni-vfs: push restart
 
-## Rebuild app + CNI plugin images, reload into kind, then restart (custom CNI mode).
-redeploy-custom-cni: push push-cni restart
+## Rebuild app images (fuse sidecar), reload into kind, then restart (Istio CNI mode).
+redeploy-istio-cni-fuse: push-fuse restart
 
-## Rebuild images, reload into kind, then restart (defaults to Istio CNI mode).
-redeploy: redeploy-istio-cni
+## Rebuild app + CNI plugin images (vfs sidecar), reload into kind, then restart (custom CNI mode).
+redeploy-custom-cni-vfs: push push-cni restart
+
+## Rebuild app + CNI plugin images (fuse sidecar), reload into kind, then restart (custom CNI mode).
+redeploy-custom-cni-fuse: push-fuse push-cni restart
+
+## Alias for redeploy-istio-cni-vfs.
+redeploy: redeploy-istio-cni-vfs
 
 ## Delete all manifests (keeps cluster and Istio).
 undeploy-istio-cni:

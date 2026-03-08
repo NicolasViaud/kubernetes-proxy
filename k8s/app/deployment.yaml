@@ -51,6 +51,20 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
+      volumes:
+        # Shared Unix socket directory: the sidecar writes /run/docker/docker.sock
+        # and the app reads it via DOCKER_HOST=unix:///run/docker/docker.sock.
+        - name: docker-socket
+          emptyDir: {}
+        # Writable /tmp for the sidecar: Podman uses XDG_RUNTIME_DIR=/tmp/podman-runtime
+        # for its runtime socket and state files.
+        - name: sidecar-tmp
+          emptyDir: {}
+        # Writable home directory for the sidecar user: Podman stores image layers in
+        # ~/.local/share/containers and config in ~/.config/containers.
+        - name: sidecar-home
+          emptyDir: {}
+
       containers:
         # ---------------------------------------------------------------- #
         # Application container                                             #
@@ -63,6 +77,13 @@ spec:
               value: "http://httpbin.org/get,https://httpbin.org/get,http://example.com"
             - name: INTERVAL
               value: "15s"
+            # Point the Docker CLI at the rootless daemon socket exposed by
+            # the sidecar container through the shared emptyDir volume.
+            - name: DOCKER_HOST
+              value: unix:///run/docker/docker.sock
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /run/docker
           resources:
             requests:
               cpu: 50m
@@ -81,7 +102,7 @@ spec:
               type: RuntimeDefault
 
         # ---------------------------------------------------------------- #
-        # Custom sidecar — transparent egress proxy                        #
+        # Custom sidecar — transparent egress proxy + rootless Podman service #
         # ---------------------------------------------------------------- #
         - name: istio-proxy
           image: sidecar:latest
@@ -96,16 +117,29 @@ spec:
             # DNS name resolves to the ClusterIP of the central proxy.
             - name: PROXY_ADDR
               value: "proxy-service.proxy.svc.cluster.local:8080"
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /run/docker
+            - name: sidecar-tmp
+              mountPath: /tmp
+            - name: sidecar-home
+              mountPath: /home/sidecar
           resources:
             requests:
-              cpu: 50m
-              memory: 32Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 200m
-              memory: 64Mi
+              cpu: 500m
+              memory: 512Mi
           securityContext:
+            # Podman performs uid_map setup from INSIDE the new user namespace,
+            # so it never calls the SUID newuidmap helper from outside.
+            # This means allowPrivilegeEscalation: false and drop: ALL are safe.
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # Podman writes image layers to $HOME and runtime files to /tmp;
+            # both are covered by the emptyDir volume mounts below, so the
+            # root filesystem can remain writable for Podman's own startup writes.
+            readOnlyRootFilesystem: false
             runAsNonRoot: true
             # UID 1337 matches sidecar.istio.io/proxyUID above.
             # Istio CNI adds an iptables rule: -m owner --uid-owner 1337 -j RETURN
@@ -115,4 +149,10 @@ spec:
             capabilities:
               drop: ["ALL"]
             seccompProfile:
-              type: RuntimeDefault
+              # RuntimeDefault blocks CLONE_NEWUSER which Podman needs to create
+              # user namespaces for rootless containers. A Localhost profile is
+              # used instead — "Localhost" is permitted by the restricted PSA and
+              # the profile lives at /var/lib/kubelet/seccomp/podman.json on each
+              # node (deployed via `kind load` or the CNI DaemonSet init step).
+              type: Localhost
+              localhostProfile: podman.json

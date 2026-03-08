@@ -15,9 +15,20 @@ metadata:
 # ("istio-sidecar-injection: enabled"), so labelling the app namespace with
 # only "istio-injection: enabled" triggers CNI without webhook injection.
 #
-# Pod Security Admission: "restricted" enforces no privilege escalation,
-# drop all capabilities, non-root UID, seccomp RuntimeDefault.
-# Our sidecar runs as UID 1337 which satisfies all of those constraints.
+# Pod Security Admission: "baseline" is required by the rootless-Docker sidecar.
+#
+# Rootless Docker uses Linux user namespaces (CLONE_NEWUSER) to run dockerd as
+# a non-root user. The kernel blocks CLONE_NEWUSER when no_new_privs=1, which
+# is exactly what allowPrivilegeEscalation: false sets. Therefore the sidecar
+# must set allowPrivilegeEscalation: true — incompatible with "restricted" PSA.
+#
+# "baseline" still prevents:
+#   • privileged: true          (no full kernel access)
+#   • hostNetwork / hostPID     (no host namespace sharing)
+#   • dangerous capabilities    (CAP_SYS_ADMIN, etc. still blocked)
+#
+# The app container itself remains fully restricted (non-root, drop ALL caps,
+# readOnlyRootFilesystem, RuntimeDefault seccomp). Only the sidecar is relaxed.
 apiVersion: v1
 kind: Namespace
 metadata:

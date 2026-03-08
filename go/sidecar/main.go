@@ -47,6 +47,11 @@ func main() {
 	}
 	defer listener.Close()
 
+	// Start the Docker API compatibility proxy in the background.
+	// It rewrites bridge→host network mode so docker run works without
+	// /dev/net/tun (unavailable under restricted PSA).
+	go startDockerProxy(logger)
+
 	logger.Info("sidecar ready",
 		"listen", listenAddr,
 		"proxy", proxyAddr,
